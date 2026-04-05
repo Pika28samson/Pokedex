@@ -66,7 +66,7 @@ def upload_image():
             })
 
             # 3. Pull the visual matches from the dictionary
-           visual_matches = results["visual_matches"]
+            visual_matches = results["visual_matches"]
             print(f"--- DEBUG: Found {len(visual_matches)} visual matches ---")
             
         except Exception as e:
