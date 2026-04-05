@@ -55,19 +55,18 @@ def upload_image():
         # 2. Google Lens (Correct New Syntax)
         print("--- DEBUG: Running SerpApi GoogleSearch ---")
         
+        client = serpapi.Client(api_key=SERPAPI_KEY)
+                                
         try:
             # 1. Initialize the search object
-            search = GoogleSearch({
+            results = client.search({
                 "engine": "google_lens",
                 "url": img_url,
-                "api_key": SERPAPI_KEY
+                "type": "visual_matches"
             })
-            
-            # 2. Execute the search and convert to a dictionary (CRITICAL STEP)
-            results = search.get_dict()
-            
+
             # 3. Pull the visual matches from the dictionary
-            visual_matches = results.get("visual_matches", [])
+           visual_matches = results["visual_matches"]
             print(f"--- DEBUG: Found {len(visual_matches)} visual matches ---")
             
         except Exception as e:
