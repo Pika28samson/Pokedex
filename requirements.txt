@@ -1,5 +1,4 @@
 Flask
-google_search_results
 Requests
 serpapi
 gunicorn
