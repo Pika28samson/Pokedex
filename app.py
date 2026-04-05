@@ -1,7 +1,7 @@
 import os
 import json
 import requests
-import serpapi
+from serpapi import GoogleSearch
 from flask import Flask, request, jsonify, render_template
 
 app = Flask(__name__)
@@ -52,16 +52,18 @@ def upload_image():
         img_url = img_json['data']['url']
         print(f"--- DEBUG: ImgBB Success: {img_url} ---")
 
-        # 2. Google Lens (SerpApi)
-        print("--- DEBUG: Initializing SerpApi Client ---")
+        # 2. Google Lens (New SerpApi Syntax)
+        print("--- DEBUG: Initializing SerpApi GoogleSearch ---")
         
-        if not SERPAPI_KEY:
-            print("ERROR: SERPAPI_KEY is missing from Environment Variables!")
-            return jsonify({'error': 'Server API Key configuration error'}), 500
-
         try:
-            client = serpapi.Client(api_key=SERPAPI_KEY)
-            search = client.search({"engine": "google_lens", "url": img_url})
+            # We pass the parameters directly into GoogleSearch
+            search = GoogleSearch({
+                "engine": "google_lens",
+                "url": img_url,
+                "api_key": SERPAPI_KEY
+            })
+            results = search.get_dict()
+            visual_matches = results.get("visual_matches", [])
         except Exception as e:
             print(f"SerpApi Connection Error: {e}")
             return jsonify({'error': 'Search Engine Connection Failed'}), 500
