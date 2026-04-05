@@ -29,26 +29,44 @@ def index():
 @app.route('/upload', methods=['POST'])
 def upload_image():
     try:
+        print("--- DEBUG: Starting Upload ---")
         data = request.get_json()
+        if not data or 'image' not in data:
+            return jsonify({'error': 'No image data received'}), 400
+            
         encoded_image = data['image'].split(',', 1)[1]
 
         # 1. ImgBB Upload
+        print("--- DEBUG: Uploading to ImgBB ---")
         img_res = requests.post("https://api.imgbb.com/1/upload", 
-                                {"key": IMGBB_KEY, "image": encoded_image})
-        img_url = img_res.json()['data']['url']
+                                {"key": IMGBB_KEY, "image": encoded_image}, timeout=15)
+        img_json = img_res.json()
+        
+        if 'data' not in img_json:
+            print(f"--- DEBUG: ImgBB Failed: {img_json} ---")
+            return jsonify({'error': 'ImgBB failed', 'raw': img_json}), 500
+            
+        img_url = img_json['data']['url']
+        print(f"--- DEBUG: ImgBB Success: {img_url} ---")
 
-        # 2. Google Lens (SerpApi)
+        # 2. Google Lens
+        print("--- DEBUG: Calling SerpApi ---")
         client = serpapi.Client(api_key=SERPAPI_KEY)
         search = client.search({"engine": "google_lens", "url": img_url})
         
         # 3. Matching
         visual_matches = search.get("visual_matches", [])
-        found_name = None
+        print(f"--- DEBUG: Found {len(visual_matches)} visual matches ---")
         
-        # We look for a match in our POKEMON_DB keys
+        found_name = None
         for match in visual_matches:
-            title_words = match.get("title", "").lower().split()
-            for word in title_words:
+            title = match.get("title", "")
+            print(f"--- DEBUG: Checking title: {title} ---")
+            # Clean title: remove special chars and split into words
+            clean_title = title.replace(",", " ").replace("(", " ").replace(")", " ").lower()
+            words = clean_title.split()
+            
+            for word in words:
                 cap_word = word.capitalize()
                 if cap_word in POKEMON_DB:
                     found_name = cap_word
@@ -56,22 +74,26 @@ def upload_image():
             if found_name: break
 
         if not found_name:
+            print("--- DEBUG: No match found in POKEMON_DB ---")
             return jsonify({'error': 'Pokemon not recognized'}), 404
 
-        # 4. Return Data
+        # 4. Final Response
+        print(f"--- DEBUG: Match Found: {found_name} ---")
         info = POKEMON_DB[found_name]
-        slug = found_name.lower().replace(" ", "-").replace(".", "").replace("'", "")
         
         return jsonify({
             'name': found_name,
-            'number': info['number'],
-            'description': info['description'],
+            'number': info.get('number', '#???'),
+            'description': info.get('description', 'No data'),
             'image_url': f"/static/Full Pokemon/{found_name}.png",
-            'types': info['types'],
-            'pokedex_url': f"https://www.pokemon.com/uk/pokedex/{slug}"
+            'types': info.get('types', ['Unknown']),
+            'pokedex_url': f"https://www.pokemon.com/uk/pokedex/{found_name.lower()}"
         })
 
     except Exception as e:
+        import traceback
+        err_msg = traceback.format_exc()
+        print(f"--- DEBUG: CRITICAL ERROR ---\n{err_msg}")
         return jsonify({'error': str(e)}), 500
 
 if __name__ == '__main__':
