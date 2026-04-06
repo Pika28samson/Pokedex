@@ -7,9 +7,8 @@ from flask import Flask, request, jsonify, render_template
 app = Flask(__name__)
 
 # --- KEYS (ENSURE THESE ARE CORRECT) ---
-SERPAPI_KEY = os.environ.get("SERPAPI_KEY")
-IMGBB_KEY = os.environ.get("IMGBB_KEY")
-
+SERPAPI_KEY = "4d2aba90b29c07b833c32e9188908d11299ef2126e50dab873ee41bf25d3d7e7"
+IMGBB_KEY = "58f4278c0df1a7a54c5ae3135d115031"
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
 # 1. LOAD LOCAL DATABASE ON STARTUP
@@ -24,6 +23,11 @@ except FileNotFoundError:
 @app.route('/')
 def index():
     return render_template('index.html')
+
+# NEW ROUTE: This serves the grid data to your new Pokedex tab
+@app.route('/api/all_pokemon')
+def get_all_pokemon():
+    return jsonify(POKEMON_DB)
 
 @app.route('/upload', methods=['POST'])
 def upload_image():
@@ -44,7 +48,7 @@ def upload_image():
         titles = [match.get("title", "").lower() for match in visual_matches]
         all_words = " ".join(titles).replace(",", " ").split()
         
-        # Compare against our local keys (which are Capitalized)
+        # Compare against our local keys
         match_found = None
         for word in all_words:
             capital_word = word.capitalize()
@@ -55,10 +59,9 @@ def upload_image():
         if not match_found:
             return jsonify({'error': 'Pokemon not recognized'}), 404
 
-        # Step 4: GET DATA FROM LOCAL DB (NO SCRAPING!)
+        # Step 4: GET DATA FROM LOCAL DB
         pokemon_info = POKEMON_DB[match_found]
         
-        # Slug is still needed for the external "Details" link
         slug = match_found.lower().replace(" ", "-").replace(".", "").replace("'", "")
 
         return jsonify({
@@ -74,7 +77,7 @@ def upload_image():
         print(f"Error: {e}")
         return jsonify({'error': 'Server error'}), 500
 
+# ALWAYS keep this at the very bottom
 if __name__ == '__main__':
-    # Use the PORT provided by Render
     port = int(os.environ.get("PORT", 5000))
     app.run(host='0.0.0.0', port=port)
