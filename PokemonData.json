@@ -7653,7 +7653,7 @@
             "Dragon"
         ]
     },
-    "Gouging fire": {
+    "Gouging Fire": {
         "number": "#1020",
         "description": "There are scant few reports of this creature being sighted. One short video shows it rampaging and spouting pillars of flame.",
         "types": [
@@ -7661,7 +7661,7 @@
             "Dragon"
         ]
     },
-    "Raging bolt": {
+    "Raging Bolt": {
         "number": "#1021",
         "description": "It's said to incinerate everything around it with lightning launched from its fur. Very little is known about this creature.",
         "types": [
@@ -7669,7 +7669,7 @@
             "Dragon"
         ]
     },
-    "Iron boulder": {
+    "Iron Boulder": {
         "number": "#1022",
         "description": "It resembles a Pok\u00e9mon described in a dubious magazine as a Terrakion that had been modified by an evil organization.",
         "types": [
@@ -7677,7 +7677,7 @@
             "Psychic"
         ]
     },
-    "Iron crown": {
+    "Iron Crown": {
         "number": "#1023",
         "description": "It resembles a mysterious object introduced in a paranormal magazine as a cutting-edge weapon shaped like a Cobalion.",
         "types": [
