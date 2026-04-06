@@ -5,12 +5,13 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>Pokemon Snap</title>
     
-    <link rel="manifest" href="/manifest.json">
+    <link rel="manifest" href="https://pokedex-485k.onrender.com/manifest.json">
     <meta name="mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
     <meta name="theme-color" content="#FF5350">
-    <link rel="apple-touch-icon" href="/static/icon-192.png">
-    <link rel="icon" type="image/png" href="/static/icon-192.png">
+    
+    <link rel="apple-touch-icon" href="https://pokedex-485k.onrender.com/static/icon-192.png?v=2">
+    <link rel="icon" type="image/png" href="https://pokedex-485k.onrender.com/static/icon-192.png?v=2">
 
     <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700&display=swap" rel="stylesheet">
     <script src="https://cdnjs.cloudflare.com/ajax/libs/localforage/1.10.0/localforage.min.js"></script>
@@ -351,8 +352,6 @@
                 const card = document.createElement('div');
                 card.className = `dex-card ${isCaught ? '' : 'locked'}`;
                 card.innerHTML = `<img src="${isCaught ? userImg : '/static/Full Pokemon/'+name+'.png'}" loading="lazy"><p>#${info.number}</p><strong>${isCaught ? name : '???' }</strong>`;
-                
-                // NOW CLICKABLE EVEN IF LOCKED
                 card.onclick = () => { 
                     showPage('scanner'); 
                     displayResult(name, userImg, info); 
