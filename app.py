@@ -49,8 +49,6 @@ def upload_image():
         visual_matches = results.get("visual_matches", [])
         titles = [match.get("title", "").title() for match in visual_matches]
         all_words = ", ".join(titles).title()
-        
-        print(all_words)
 
         # Compare against our local keys
         match_found = None
@@ -58,8 +56,6 @@ def upload_image():
         for pokemon in list(POKEMON_DB.keys()):
             for i in range(all_words.count(pokemon)):
                 matches.append(pokemon)
-
-        print(matches)
 
         if not matches:
             return jsonify({'error': 'Pokemon not recognized'}), 404
