@@ -105,12 +105,12 @@
         <button id="scan-btn" class="action-btn" onclick="captureAndIdentify()">SCAN</button>
         
         <div id="result-panel" class="result-panel">
-            <div id="res-types" style="text-align:center; margin-bottom: 10px;"></div>
             <div class="image-comparison">
                 <div class="image-box"><img id="res-img-user" src=""><label id="res-label-user">CAPTURE</label></div>
                 <div class="image-box"><img id="res-img-dex" src=""><label>DATABASE</label></div>
             </div>
             <h2 id="res-name" style="text-align:center; margin:10px 0;">---</h2>
+            <div id="res-types" style="text-align:center; margin-bottom: 18px;"></div>
             <p id="res-desc" style="font-size: 0.7rem; color: #bbb; text-align: center;"></p>
             <button class="action-btn" onclick="downloadPhoto()">DOWNLOAD PHOTO</button>
             <button class="secondary-btn" onclick="showDeleteConfirm()" style="color: #ff5555;">DELETE ENTRY</button>
@@ -121,7 +121,10 @@
     <div id="pokedex-page" class="page">
         <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
             <span id="stats-counter" style="font-size: 0.7rem; color: var(--rotom-blue);">0 / 0</span>
-            <button class="filter-btn" id="sort-btn" onclick="toggleSort()" style="max-width: 100px;">SORT: NUM</button>
+            <div style="display: flex; gap: 5px; align-items: center;">
+                <button class="filter-btn" id="sort-btn" onclick="cycleSortMode()" style="width: 100px;">DEX. NO</button>
+                <button class="filter-btn" id="dir-btn" onclick="toggleSortDir()" style="width: 15px; min-width: 0; padding: 10px 0;">↓</button>
+            </div>
         </div>
         
         <input type="text" id="dex-search" class="search-input" placeholder="Search Collection..." onkeyup="renderDex()">
@@ -191,7 +194,8 @@
     <script>
         let POKEMON_DB = {};
         let currentFilter = 'all';
-        let currentSort = 'num';
+        let currentSort = 'num'; // Options: 'num', 'abc', 'date'
+        let sortAscending = false; // false = Descending (Newest/Highest first), true = Ascending
         let selectedTypes = [];
         let favorites = [];
         let favFilterActive = false; // Tracks if favorite filter is enabled
@@ -200,19 +204,51 @@
         let tempPhoto = "";
         let shouldDeleteOnManual = false;
         let videoStream = null;
+        
 
         const TYPES = ['Normal','Fire','Water','Electric','Grass','Ice','Fighting','Poison','Ground','Flying','Psychic','Bug','Rock','Ghost','Dragon','Dark','Steel','Fairy'];
 
+        async function migrateOldData() {
+            const keys = await localforage.keys();
+            for (let key of keys) {
+                if (key === 'user_favorites') continue;
+                const data = await localforage.getItem(key);
+                // Only migrate if the data is a string (the old format)
+                if (typeof data === 'string' && data.startsWith('data:image')) {
+                    await localforage.setItem(key, {
+                        image: data,
+                        date: 1712361600000 // Sets date to April 6, 2026
+                    });
+                }
+            }
+        }
+
         async function init() {
             try {
+                // 1. START CAMERA FIRST (Gets permissions immediately)
+                await startCamera();
+
+                // 2. Load the database in the background
                 const res = await fetch('/api/all_pokemon');
                 POKEMON_DB = await res.json();
                 
-                // Load favorites
+                // 3. Run migration and favorites
+                await migrateOldData();
                 const savedFavs = await localforage.getItem('user_favorites');
                 if (savedFavs) favorites = savedFavs;
 
-                // Start Camera
+                generateTypeGrid();
+            } catch (e) { 
+                console.error("Initialization Error:", e);
+            }
+        }
+
+        async function startCamera() {
+            try {
+                if (videoStream) {
+                    videoStream.getTracks().forEach(track => track.stop());
+                }
+                
                 videoStream = await navigator.mediaDevices.getUserMedia({ 
                     video: { facingMode: "environment" } 
                 });
@@ -220,7 +256,6 @@
                 const videoElement = document.getElementById('video');
                 videoElement.srcObject = videoStream;
 
-                // Zoom Control
                 const track = videoStream.getVideoTracks()[0];
                 const capabilities = track.getCapabilities();
                 const zoomSlider = document.getElementById('zoom-slider');
@@ -230,15 +265,16 @@
                     zoomSlider.max = capabilities.zoom.max;
                     zoomSlider.step = capabilities.zoom.step;
                     zoomSlider.value = capabilities.zoom.min;
-                    zoomSlider.addEventListener('input', async (e) => {
+                    // Clean up old listeners before adding new ones
+                    const newSlider = zoomSlider.cloneNode(true);
+                    zoomSlider.parentNode.replaceChild(newSlider, zoomSlider);
+                    newSlider.addEventListener('input', async (e) => {
                         await track.applyConstraints({ advanced: [{ zoom: parseFloat(e.target.value) }] });
                     });
-                } else {
-                    zoomSlider.parentElement.style.opacity = "0.5";
                 }
-
-                generateTypeGrid();
-            } catch (e) { console.error("Initialization Error:", e); }
+            } catch (err) {
+                console.error("Camera Error:", err);
+            }
         }
 
         async function toggleFavorite(name, cardElement) {
@@ -293,16 +329,24 @@
                 document.getElementById('conflict-img').src = `/static/Full Pokemon/${name}.png`;
                 document.getElementById('overwrite-overlay').style.display = 'flex';
             } else {
-                await localforage.setItem(name, photo);
+                // SAVE AS OBJECT WITH TIMESTAMP
+                await localforage.setItem(name, { image: photo, date: Date.now() });
                 displayResult(name, photo, dataObj);
             }
         }
 
         async function confirmOverwrite(overwrite) {
             document.getElementById('overwrite-overlay').style.display = 'none';
-            if (overwrite) await localforage.setItem(currentDisplayedPokemon, tempPhoto);
-            const finalImg = await localforage.getItem(currentDisplayedPokemon);
-            displayResult(currentDisplayedPokemon, finalImg, POKEMON_DB[currentDisplayedPokemon]);
+            if (overwrite) {
+                // Save as OBJECT to match new format
+                await localforage.setItem(currentDisplayedPokemon, { 
+                    image: tempPhoto, 
+                    date: Date.now() 
+                });
+            }
+            const finalData = await localforage.getItem(currentDisplayedPokemon);
+            // Pass finalData.image to the displayResult
+            displayResult(currentDisplayedPokemon, finalData.image, POKEMON_DB[currentDisplayedPokemon]);
         }
 
         function triggerManualFromConflict() {
@@ -310,12 +354,22 @@
             openManualPicker(false); 
         }
 
-        function displayResult(name, userImg, data) {
+        async function displayResult(name, userImg, data) {
             if(!data) return;
             currentDisplayedPokemon = name;
+            
+            // 1. Get the stored object to find the capture date
+            const stored = await localforage.getItem(name);
+            
+            // 2. Format the date (Date only, no time)
+            const dateStr = stored ? new Date(stored.date).toLocaleDateString() : "NOT CAUGHT";
+
             document.getElementById('result-panel').style.display = 'block';
             document.getElementById('res-name').innerText = name;
-            document.getElementById('res-desc').innerText = data.description;
+
+            // 3. Update the description to show the Date on top
+            document.getElementById('res-desc').innerHTML = `Captured: ${dateStr}<br><br>${data.description}`;
+            
             document.getElementById('res-img-dex').src = `/static/Full Pokemon/${name}.png`;
             
             const imgUser = document.getElementById('res-img-user');
@@ -351,19 +405,53 @@
             grid.innerHTML = '';
             
             let items = Object.entries(POKEMON_DB);
-            if (currentSort === 'num') items.sort((a,b) => parseInt(a[1].number.replace('#','')) - parseInt(b[1].number.replace('#','')));
-            else items.sort((a,b) => a[0].localeCompare(b[0]));
+
+            // 1. Gather data including timestamps
+            const itemData = await Promise.all(Object.entries(POKEMON_DB).map(async ([name, info]) => {
+                const stored = await localforage.getItem(name);
+                return { 
+                    name, info, 
+                    userImg: stored ? stored.image : null, 
+                    date: stored ? stored.date : 0,
+                    isCaught: !!stored 
+                };
+            }));
+
+            // 2. Sort Logic
+            itemData.sort((a, b) => {
+                // Always prioritize caught on "DATE" sort
+                if (currentSort === 'date') {
+                    if (a.isCaught && !b.isCaught) return -1;
+                    if (!a.isCaught && b.isCaught) return 1;
+                }
+
+                let comparison = 0;
+                if (currentSort === 'num') {
+                    // ↓ = 1 to 1025 (Smallest to Largest)
+                    comparison = parseInt(a.info.number.replace('#', '')) - parseInt(b.info.number.replace('#', ''));
+                } else if (currentSort === 'abc') {
+                    // ↓ = A to Z
+                    comparison = a.name.localeCompare(b.name);
+                } else if (currentSort === 'date') {
+                    // ↓ = Newest (High Timestamp) to Oldest (Low Timestamp)
+                    // We flip this specifically so ↓ puts recent photos at the top
+                    comparison = b.date - a.date;
+                }
+
+                // If ↓ (sortAscending is false), keep the comparison as is.
+                // If ↑ (sortAscending is true), flip the result.
+                return sortAscending ? -comparison : comparison;
+            });
 
             const fragment = document.createDocumentFragment();
             let caught = 0; let visible = 0;
 
-            for (const [name, info] of items) {
-                const userImg = await localforage.getItem(name);
-                const isCaught = !!userImg;
+            for (const item of itemData) {
+                const { name, info, userImg, isCaught } = item;
                 const isFav = favorites.includes(name);
-                
                 if (isCaught) caught++;
 
+                // Filters
                 if (search && !name.toLowerCase().includes(search)) continue;
                 if (currentFilter === 'caught' && !isCaught) continue;
                 if (currentFilter === 'missing' && isCaught) continue;
@@ -373,6 +461,7 @@
                 visible++;
                 const card = document.createElement('div');
                 card.className = `dex-card ${isCaught ? '' : 'locked'} ${isFav ? 'is-fav' : ''}`;
+                // ... Rest of your card creation code (long press, innerHTML, etc) ...
                 card.innerHTML = `
                     <span class="fav-heart">❤️</span>
                     <img src="${isCaught ? userImg : '/static/Full Pokemon/'+name+'.png'}" loading="lazy">
@@ -507,9 +596,19 @@
             renderDex();
         }
 
-        function toggleSort() {
-            currentSort = currentSort === 'num' ? 'alpha' : 'num';
-            document.getElementById('sort-btn').innerText = `SORT: ${currentSort.toUpperCase()}`;
+
+        function cycleSortMode() {
+            const modes = ['num', 'abc', 'date'];
+            let idx = (modes.indexOf(currentSort) + 1) % modes.length;
+            currentSort = modes[idx];
+            document.getElementById('sort-btn').innerText = `${currentSort === 'abc' ? 'NAME' : currentSort.toUpperCase()}`;
+            renderDex();
+        }
+
+        function toggleSortDir() {
+            sortAscending = !sortAscending;
+            // false = ↓ (Standard/Recent), true = ↑ (Reverse/Oldest)
+            document.getElementById('dir-btn').innerText = sortAscending ? '↑' : '↓';
             renderDex();
         }
 
@@ -539,11 +638,16 @@
                 d.onclick = async () => {
                     document.getElementById('picker-overlay').style.display = 'none';
                     let targetPhoto = tempPhoto; 
+                    
                     if (shouldDeleteOnManual) {
-                        const savedPhoto = await localforage.getItem(currentDisplayedPokemon);
-                        if (savedPhoto) targetPhoto = savedPhoto;
+                        const saved = await localforage.getItem(currentDisplayedPokemon);
+                        // FIX: If it's an object, grab the .image string
+                        if (saved) {
+                            targetPhoto = (typeof saved === 'object') ? saved.image : saved;
+                        }
                         await localforage.removeItem(currentDisplayedPokemon);
                     }
+                    
                     tempPhoto = targetPhoto;
                     await checkAndSave(name, tempPhoto, info);
                 };
