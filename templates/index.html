@@ -89,6 +89,12 @@
         <div id="scanner-container">
             <video id="video" autoplay playsinline></video>
             <div id="scan-line" class="scan-line" style="display:none;"></div>
+            
+            <div style="position: absolute; bottom: 10px; left: 50%; transform: translateX(-50%); width: 80%; z-index: 10; background: rgba(0,0,0,0.5); padding: 5px 15px; border-radius: 20px; display: flex; align-items: center; gap: 10px;">
+                <span style="font-size: 0.6rem; color: white;">1x</span>
+                <input type="range" id="zoom-slider" min="1" max="5" step="0.1" value="1" style="flex-grow: 1; accent-color: var(--rotom-blue);">
+                <span style="font-size: 0.6rem; color: white;">5x</span>
+            </div>
         </div>
         <button id="scan-btn" class="action-btn" onclick="captureAndIdentify()">SCAN</button>
         
@@ -184,14 +190,50 @@
 
         const TYPES = ['Normal','Fire','Water','Electric','Grass','Ice','Fighting','Poison','Ground','Flying','Psychic','Bug','Rock','Ghost','Dragon','Dark','Steel','Fairy'];
 
+        let videoStream = null;
+
         async function init() {
             try {
                 const res = await fetch('/api/all_pokemon');
                 POKEMON_DB = await res.json();
-                const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" } });
-                document.getElementById('video').srcObject = stream;
+                
+                // 1. Start the camera normally
+                videoStream = await navigator.mediaDevices.getUserMedia({ 
+                    video: { 
+                        facingMode: "environment"
+                    } 
+                });
+                
+                const videoElement = document.getElementById('video');
+                videoElement.srcObject = videoStream;
+
+                // 2. Setup Zoom Slider
+                const track = videoStream.getVideoTracks()[0];
+                const capabilities = track.getCapabilities();
+                const zoomSlider = document.getElementById('zoom-slider');
+
+                // Check if the hardware actually supports digital zoom
+                if (capabilities.zoom) {
+                    zoomSlider.min = capabilities.zoom.min;
+                    zoomSlider.max = capabilities.zoom.max;
+                    zoomSlider.step = capabilities.zoom.step;
+                    zoomSlider.value = capabilities.zoom.min;
+
+                    zoomSlider.addEventListener('input', async (e) => {
+                        await track.applyConstraints({
+                            advanced: [{ zoom: parseFloat(e.target.value) }]
+                        });
+                    });
+                } else {
+                    // If hardware zoom isn't supported, we hide the slider or warn the user
+                    console.warn("Digital zoom constraints not supported on this browser/device.");
+                    zoomSlider.parentElement.style.opacity = "0.5";
+                }
+
                 generateTypeGrid();
-            } catch (e) { console.error("Initialization Error:", e); }
+            } catch (e) { 
+                console.error("Initialization Error:", e); 
+            }
         }
 
         async function captureAndIdentify() {
