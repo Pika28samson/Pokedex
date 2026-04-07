@@ -618,7 +618,11 @@
             const modes = ['num', 'abc', 'date'];
             let idx = (modes.indexOf(currentSort) + 1) % modes.length;
             currentSort = modes[idx];
-            document.getElementById('sort-btn').innerText = `${currentSort === 'abc' ? 'NAME' : currentSort.toUpperCase()}`;
+            
+            // Logic: If mode is 'num', show 'DEX. NO', if 'abc' show 'ABC', otherwise 'DATE'
+            const label = currentSort === 'num' ? 'DEX. NO' : (currentSort === 'abc' ? 'NAME' : 'DATE');
+            
+            document.getElementById('sort-btn').innerText = label;
             renderDex();
         }
 
