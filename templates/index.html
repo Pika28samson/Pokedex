@@ -14,8 +14,27 @@
 
     <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700&display=swap" rel="stylesheet">
     <script src="https://cdnjs.cloudflare.com/ajax/libs/localforage/1.10.0/localforage.min.js"></script>
+
+    
+
     
     <style>
+        .login-btn {
+            background: transparent;
+            border: 1px solid var(--rotom-blue);
+            color: var(--rotom-blue);
+            padding: 5px 12px;
+            border-radius: 5px;
+            font-size: 0.6rem;
+            font-family: 'Orbitron';
+            cursor: pointer;
+        }
+        .login-btn.logged-in {
+            border-color: #4CAF50;
+            color: #4CAF50;
+        }
+
+
         :root {
             --rotom-red: #FF5350; --rotom-blue: #00E5FF; --bg-dark: #121212; --panel-bg: #1e1e1e;
             --card-bg: #2a2a2a;
@@ -91,6 +110,9 @@
 <body>
 
     <div id="scanner-page" class="page active">
+        <div style="text-align: right; margin-bottom: 10px;">
+            <button id="login-btn" class="login-btn" onclick="handleAuthAction()">LOGIN WITH GOOGLE</button>
+        </div>
         <h2 style="text-align: center; color: var(--rotom-red); margin-top: 0; letter-spacing: 2px;">POKÉMON SNAP</h2>
         <div id="scanner-container">
             <video id="video" autoplay playsinline></video>
@@ -147,6 +169,15 @@
         </button>
 
         <div id="dex-grid" class="dex-grid"></div>
+
+            <div style="padding: 20px 0; text-align: center;">
+                <button class="secondary-btn" 
+                        style="width: 80%; margin: 0 auto; border: 1px solid var(--rotom-blue); color: var(--rotom-blue); padding: 15px;" 
+                        onclick="downloadCollectionJSON()">
+                    DOWNLOAD PHOTO
+                </button>
+            </div>
+        </div>
     </div>
 
     <div id="type-overlay" class="overlay">
@@ -194,7 +225,130 @@
 
     <canvas id="canvas"></canvas>
 
+    <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-auth-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore-compat.js"></script>
+
     <script>
+        // --- DUAL STORAGE LOGIC ---
+        async function masterSave(pokemonName, photo, dataObj) {
+            // 1. Prepare the standard object format
+            const captureData = {
+                image: photo,
+                date: Date.now(),
+                number: dataObj.number,
+                category: dataObj.category,
+                types: dataObj.types,
+                description: dataObj.description
+            };
+
+            // 2. Save to Local Device (Always)
+            await localforage.setItem(pokemonName, captureData);
+            console.log("Saved locally.");
+
+            // 3. Save to Google Cloud (If Logged In)
+            const user = auth.currentUser;
+            if (user) {
+                try {
+                    await db.collection('users')
+                            .doc(user.uid)
+                            .collection('pokedex')
+                            .doc(pokemonName)
+                            .set(captureData);
+                    console.log("Synced to Cloud.");
+                } catch (e) {
+                    console.error("Cloud Sync Error:", e);
+                }
+            }
+        }
+
+        const firebaseConfig = {
+        apiKey: "AIzaSyDWa_IeuSevyKeRG0jv4VEG3O2_tjPxhc4",
+        authDomain: "pokemon-snap-1b3c2.firebaseapp.com",
+        projectId: "pokemon-snap-1b3c2",
+        storageBucket: "pokemon-snap-1b3c2.firebasestorage.app",
+        messagingSenderId: "776334935734",
+        appId: "1:776334935734:web:d6bd8aa2087408cdf5c817"
+        };
+
+        firebase.initializeApp(firebaseConfig);
+        const auth = firebase.auth();
+        const db = firebase.firestore();
+
+        // Watch for login/logout
+        auth.onAuthStateChanged(async (user) => {
+            const btn = document.getElementById('login-btn');
+            if (user) {
+                btn.innerText = user.displayName.split(' ')[0].toUpperCase();
+                btn.classList.add('logged-in');
+
+                // NEW: Background Sync - Download missing cloud data to local storage
+                try {
+                    const snapshot = await db.collection('users').doc(user.uid).collection('pokedex').get();
+                    snapshot.forEach(async (doc) => {
+                        const name = doc.id;
+                        const cloudData = doc.data();
+                        
+                        // Check if we already have this locally
+                        const localData = await localforage.getItem(name);
+                        if (!localData || (localData.date < cloudData.date)) {
+                            // Save to localforage so the icon appears immediately
+                            await localforage.setItem(name, cloudData);
+                            console.log(`Synced ${name} from cloud.`);
+                        }
+                    });
+                    // Re-render once after the initial batch sync starts
+                    setTimeout(renderDex, 1000); 
+                } catch (e) {
+                    console.error("Background sync error:", e);
+                }
+            } else {
+                btn.innerText = "LOGIN WITH GOOGLE";
+                btn.classList.remove('logged-in');
+            }
+            renderDex();
+        });
+
+        async function handleAuthAction() {
+            const user = auth.currentUser;
+            if (user) {
+                // If already logged in, show sign out confirmation
+                if (confirm("Sign out? Your data is safe in the cloud and on this device.")) {
+                    await auth.signOut();
+                    location.reload();
+                }
+            } else {
+                // THIS IS THE PART THAT WAS MISSING:
+                const provider = new firebase.auth.GoogleAuthProvider();
+                try {
+                    // This opens the Google Login Popup
+                    const result = await auth.signInWithPopup(provider);
+                    
+                    // Once they log in, sync their existing local data to their new account
+                    console.log("Login successful! Syncing data...");
+                    await syncLocalToCloud(result.user.uid);
+                    
+                    // Refresh the display
+                    renderDex();
+                    alert(`Welcome, ${result.user.displayName}! Cloud sync is active.`);
+                } catch (e) { 
+                    console.error("Login Error:", e);
+                    alert("Login failed. Check if popups are blocked.");
+                }
+            }
+        }
+
+        async function syncLocalToCloud(uid) {
+            const keys = await localforage.keys();
+            for (let key of keys) {
+                if (key === 'user_favorites') continue;
+                const data = await localforage.getItem(key);
+                // Upload each caught Pokemon to your specific user folder in the cloud
+                await db.collection('users').doc(uid).collection('pokedex').doc(key).set(data);
+            }
+        }
+
+
         let POKEMON_DB = {};
         let currentFilter = 'all';
         let currentSort = 'num'; // Options: 'num', 'abc', 'date'
@@ -305,9 +459,12 @@
             const video = document.getElementById('video');
             const canvas = document.getElementById('canvas');
             const ctx = canvas.getContext('2d');
-            canvas.width = 640; canvas.height = (video.videoHeight / video.videoWidth) * 640;
+            // Change 640 to something higher, like 1920 or 2560 (depending on device limits)
+            const TARGET_WIDTH = 1280; 
+            canvas.width = TARGET_WIDTH; 
+            canvas.height = (video.videoHeight / video.videoWidth) * TARGET_WIDTH;
             ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-            tempPhoto = canvas.toDataURL('image/jpeg', 0.8);
+            tempPhoto = canvas.toDataURL('image/jpeg', 0.9);
 
             try {
                 const res = await fetch('/upload', { 
@@ -327,29 +484,29 @@
         async function checkAndSave(name, photo, dataObj) {
             currentDisplayedPokemon = name;
             const existing = await localforage.getItem(name);
+            
             if (existing) {
                 document.getElementById('conflict-name').innerText = name;
                 document.getElementById('conflict-img').src = `/static/Full Pokemon/${name}.png`;
                 document.getElementById('overwrite-overlay').style.display = 'flex';
             } else {
-                // SAVE AS OBJECT WITH TIMESTAMP
-                await localforage.setItem(name, { image: photo, date: Date.now() });
+                // Use the new masterSave function
+                await masterSave(name, photo, dataObj);
                 displayResult(name, photo, dataObj);
             }
         }
 
         async function confirmOverwrite(overwrite) {
             document.getElementById('overwrite-overlay').style.display = 'none';
+            const dataObj = POKEMON_DB[currentDisplayedPokemon];
+            
             if (overwrite) {
-                // Save as OBJECT to match new format
-                await localforage.setItem(currentDisplayedPokemon, { 
-                    image: tempPhoto, 
-                    date: Date.now() 
-                });
+                // Update both local and cloud with the new photo
+                await masterSave(currentDisplayedPokemon, tempPhoto, dataObj);
             }
+            
             const finalData = await localforage.getItem(currentDisplayedPokemon);
-            // Pass finalData.image to the displayResult
-            displayResult(currentDisplayedPokemon, finalData.image, POKEMON_DB[currentDisplayedPokemon]);
+            displayResult(currentDisplayedPokemon, finalData.image, dataObj);
         }
 
         function triggerManualFromConflict() {
@@ -361,8 +518,21 @@
             if (!data) return;
             currentDisplayedPokemon = name;
 
-            const stored = await localforage.getItem(name);
+            // NEW: Check local first, then cloud if logged in
+            let stored = await localforage.getItem(name);
+            const user = auth.currentUser;
+            
+            if (!stored && user) {
+                const doc = await db.collection('users').doc(user.uid).collection('pokedex').doc(name).get();
+                if (doc.exists) {
+                    stored = doc.data();
+                    // Optional: Save it locally now so it's faster next time
+                    await localforage.setItem(name, stored);
+                }
+            }
+
             const dateStr = stored ? new Date(stored.date).toLocaleDateString() : "NOT CAUGHT";
+            const currentImg = userImg || (stored ? stored.image : null);
 
             document.getElementById('result-panel').style.display = 'block';
 
@@ -423,14 +593,38 @@
             
             let items = Object.entries(POKEMON_DB);
 
-            // 1. Gather data including timestamps
+            // 1. Gather data from BOTH local and cloud
+            const localKeys = await localforage.keys();
+            const caughtSet = new Set(localKeys.filter(k => k !== 'user_favorites'));
+            
+            const user = auth.currentUser;
+            if (user) {
+                const snapshot = await db.collection('users').doc(user.uid).collection('pokedex').get();
+                snapshot.forEach(doc => caughtSet.add(doc.id));
+            }
+
             const itemData = await Promise.all(Object.entries(POKEMON_DB).map(async ([name, info]) => {
-                const stored = await localforage.getItem(name);
+                const isCaught = caughtSet.has(name);
+                let stored = null;
+                
+                if (isCaught) {
+                    stored = await localforage.getItem(name);
+                    
+                    // IF NOT LOCAL: Try to show a placeholder or 
+                    // trigger a render once the background sync (above) finishes.
+                    if (!stored && user) {
+                        // While the background sync is working, show the silhouette 
+                        // so the user knows it IS caught, just loading.
+                        stored = { date: Date.now(), image: null }; 
+                    }
+                }
+
                 return { 
                     name, info, 
-                    userImg: stored ? stored.image : null, 
+                    // Ensure we use the stored image if available
+                    userImg: (stored && stored.image) ? stored.image : null, 
                     date: stored ? stored.date : 0,
-                    isCaught: !!stored 
+                    isCaught: isCaught 
                 };
             }));
 
@@ -686,9 +880,54 @@
         function showDeleteConfirm() { document.getElementById('confirm-overlay').style.display = 'flex'; }
         
         function downloadPhoto() {
-            const a = document.createElement('a'); a.download = `${currentDisplayedPokemon}.jpg`;
-            a.href = document.getElementById('res-img-user').src; a.click();
+            const link = document.createElement('a');
+            link.download = `${currentDisplayedPokemon}_300PPI.jpg`;
+            
+            // We convert the base64 to a Blob
+            const byteString = atob(tempPhoto.split(',')[1]);
+            const ab = new ArrayBuffer(byteString.length);
+            const ia = new Uint8Array(ab);
+            for (let i = 0; i < byteString.length; i++) {
+                ia[i] = byteString.charCodeAt(i);
+            }
+            
+            // The blob itself doesn't hold PPI, but creating a high-res blob
+            // ensures the printer has enough 'dots' to hit 300 PPI.
+            const blob = new Blob([ab], {type: 'image/jpeg'});
+            link.href = URL.createObjectURL(blob);
+            link.click();
         }
+
+        async function downloadCollectionJSON() {
+            const keys = await localforage.keys();
+            const collectionData = {};
+
+            for (let key of keys) {
+                // Skip the favorites list, we just want the Pokemon entries
+                if (key === 'user_favorites') continue;
+                
+                const entry = await localforage.getItem(key);
+                collectionData[key] = entry;
+            }
+
+            // Create the JSON blob
+            const dataStr = JSON.stringify(collectionData, null, 2);
+            const dataBlob = new Blob([dataStr], { type: 'application/json' });
+            
+            // Create a temporary link to trigger the download
+            const url = URL.createObjectURL(dataBlob);
+            const link = document.createElement('a');
+            
+            const timestamp = new Date().toISOString().split('T')[0];
+            link.download = `pokedex_backup_${timestamp}.json`;
+            link.href = url;
+            
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+            URL.revokeObjectURL(url);
+        }
+
 
         init();
     </script>
