@@ -110,6 +110,10 @@
 <body>
 
     <div id="scanner-page" class="page active">
+        <div id="streak-container" style="position: absolute; top: 15px; left: 15px; z-index: 10; font-family: 'Orbitron'; font-size: 1rem; display: flex; align-items: center; gap: 5px; text-shadow: 0 0 5px #000;">
+            <span id="streak-number">0</span>
+            <span id="streak-fire" style="display: none;">🔥</span>
+        </div>
         <div style="text-align: right; margin-bottom: 10px;">
             <button id="login-btn" class="login-btn" onclick="handleAuthAction()">LOGIN WITH GOOGLE</button>
         </div>
@@ -152,7 +156,10 @@
             </div>
         </div>
         
-        <input type="text" id="dex-search" class="search-input" placeholder="Search Collection..." onkeyup="renderDex()">
+        <div style="display: flex; gap: 10px; margin-bottom: 10px;">
+            <input type="text" id="dex-search" class="search-input" placeholder="Search Collection..." onkeyup="renderDex()" style="flex-grow: 1;">
+            <button class="filter-btn" onclick="showRandomFromFilter()" style="flex: 0 0 50px; font-size: 1.2rem; padding: 0;">🎲</button>
+        </div>
         
         <div class="filter-row">
             <button class="filter-btn active" id="f-all" onclick="setFilter('all')">ALL</button>
@@ -230,6 +237,57 @@
     <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore-compat.js"></script>
 
     <script>
+
+        async function updateStreak() {
+            const today = new Date().toDateString();
+            const streakData = await localforage.getItem('user_streak') || { count: 0, lastDate: "" };
+            
+            const lastDate = streakData.lastDate;
+            const yesterday = new Date();
+            yesterday.setDate(yesterday.getDate() - 1);
+
+            if (lastDate === today) {
+                // Already scanned today
+                document.getElementById('streak-fire').style.display = 'inline';
+            } else if (lastDate === yesterday.toDateString()) {
+                // Haven't scanned today, but did yesterday (streak continues but no fire yet)
+                document.getElementById('streak-fire').style.display = 'none';
+            } else {
+                // Streak broken
+                streakData.count = 0;
+                document.getElementById('streak-fire').style.display = 'none';
+            }
+
+            document.getElementById('streak-number').innerText = streakData.count;
+            return streakData;
+        }
+
+        // Call this inside your masterSave function after a successful scan
+        async function incrementStreak() {
+            const today = new Date().toDateString();
+            let streakData = await localforage.getItem('user_streak') || { count: 0, lastDate: "" };
+
+            if (streakData.lastDate !== today) {
+                streakData.count += 1;
+                streakData.lastDate = today;
+                await localforage.setItem('user_streak', streakData);
+            }
+            updateStreak();
+        }
+
+        async function showRandomFromFilter() {
+            // 1. Get all currently visible cards in the grid
+            const visibleCards = document.querySelectorAll('#dex-grid .dex-card');
+            if (visibleCards.length === 0) return;
+
+            // 2. Pick a random index
+            const randomIndex = Math.floor(Math.random() * visibleCards.length);
+            const selectedCard = visibleCards[randomIndex];
+
+            // 3. Trigger the click event to open the info panel
+            selectedCard.click();
+        }
+
         // --- DUAL STORAGE LOGIC ---
         async function masterSave(pokemonName, photo, dataObj) {
             // 1. Prepare the standard object format
@@ -245,6 +303,7 @@
             // 2. Save to Local Device (Always)
             await localforage.setItem(pokemonName, captureData);
             console.log("Saved locally.");
+            await incrementStreak();
 
             // 3. Save to Google Cloud (If Logged In)
             const user = auth.currentUser;
@@ -398,6 +457,7 @@
             } catch (e) { 
                 console.error("Initialization Error:", e);
             }
+            updateStreak();
         }
 
         async function startCamera() {
@@ -509,6 +569,7 @@
             
             // CRITICAL: Update tempPhoto so the download button works with the displayed image
             tempPhoto = finalData.image; 
+            await incrementStreak();
             
             displayResult(currentDisplayedPokemon, finalData.image, dataObj);
         }
